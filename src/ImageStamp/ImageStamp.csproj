@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Single project for the whole application. The former Core / Infrastructure / Api
+    projects are now the folders of the same name; namespaces are unchanged
+    (ImageStamp.Core.*, ImageStamp.Infrastructure.*, ImageStamp.Api.*).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ImageStamp</RootNamespace>
+    <AssemblyName>ImageStamp</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+</Project>
