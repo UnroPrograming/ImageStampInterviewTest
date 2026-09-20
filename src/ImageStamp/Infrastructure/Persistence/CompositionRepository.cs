@@ -180,10 +180,10 @@ WHERE id = @id;";
     public async Task<List<CompositionLayer>> GetLayersAsync(Guid compositionId, CancellationToken cancellationToken)
     {
         const string sql = @"
-SELECT id, composition_id, layer_type, x, y, opacity, z_index, file_name, width, height, color
-FROM composition_layers
-WHERE composition_id = @composition_id
-ORDER BY z_index;";
+        SELECT id, composition_id, layer_type, x, y, opacity, z_index, file_name, width, height, color, sigma
+        FROM composition_layers
+        WHERE composition_id = @composition_id
+        ORDER BY z_index;";
 
         List<CompositionLayer> layers = new List<CompositionLayer>();
 
