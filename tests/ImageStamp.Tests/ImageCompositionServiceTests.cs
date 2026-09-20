@@ -15,7 +15,7 @@ public sealed class ImageCompositionServiceTests
     public async Task ComposeAsync_WithoutLayers_ReturnsTheBaseImage()
     {
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
 
         CompositionResult result = await TestServices.CompositionService()
             .ComposeAsync(request, CancellationToken.None);
@@ -41,7 +41,7 @@ public sealed class ImageCompositionServiceTests
         overlay.Image = TestImages.SolidPngStream(2, 2, TestImages.Blue);
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
         request.Layers.Add(overlay);
 
         CompositionResult result = await TestServices.CompositionService()
@@ -69,7 +69,7 @@ public sealed class ImageCompositionServiceTests
         rectangle.Opacity = 1f;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
         request.Layers.Add(rectangle);
 
         CompositionResult result = await TestServices.CompositionService()
@@ -105,7 +105,7 @@ public sealed class ImageCompositionServiceTests
         rectangle.Opacity = 1f;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
         request.Layers.Add(overlay);
         request.Layers.Add(rectangle);
 
@@ -133,7 +133,7 @@ public sealed class ImageCompositionServiceTests
         rectangle.Opacity = 0.5f;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
         request.Layers.Add(rectangle);
 
         CompositionResult result = await TestServices.CompositionService()
@@ -172,7 +172,7 @@ public sealed class ImageCompositionServiceTests
         top.Opacity = 1f;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
 
         // Submitted in the opposite order on purpose: the zIndex decides, not the request order.
         request.Layers.Add(top);
@@ -215,7 +215,7 @@ public sealed class ImageCompositionServiceTests
             imageLayer.Image = new MemoryStream(logoBytes, writable: false); // stream fresco cada vez
 
             CompositionRequest request = new CompositionRequest();
-            request.BaseImage = TestImages.SolidPngStream(10, 10, baseColor);
+            request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, baseColor) };
             request.Layers.Add(imageLayer);
 
             return await service.ComposeAsync(request, CancellationToken.None);

@@ -62,7 +62,7 @@ public sealed class ImageCompositionService
         Stopwatch stopwatch = Stopwatch.StartNew();
 
         // Carga la imagen base en memoria
-        byte[] baseImageBytes = await BufferAsync(request.BaseImage, cancellationToken).ConfigureAwait(false);
+        byte[] baseImageBytes = await BufferAsync(request.BaseImage.Content, cancellationToken).ConfigureAwait(false);
 
         _renderQueue.Clear();
 

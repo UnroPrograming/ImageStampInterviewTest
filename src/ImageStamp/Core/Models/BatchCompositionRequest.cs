@@ -1,6 +1,4 @@
-﻿using ImageStamp.Api.Contracts;
-
-namespace ImageStamp.Core.Models;
+﻿namespace ImageStamp.Core.Models;
 
 /// <summary>
 /// Request HTTP para composición por lotes: aplica las mismas capas a múltiples imágenes base
@@ -26,14 +24,14 @@ public sealed class BatchCompositionRequest
 
     /// <summary>
     /// Capas que se aplican a TODAS las imágenes base (compartidas).
-    /// Los archivos de capas tipo "image" llegan como fields multipart adicionales,
-    /// referenciados por su "imageKey", igual que en el endpoint single.
     /// </summary>
     public List<Layer> Layers { get; set; }
 }
 
 /// <summary>
-/// Una imagen base individual dentro de un batch: su contenido y el nombre de archivo original.
+/// Una imagen base individual: su contenido y el nombre de archivo original.
+/// Usado tanto por <see cref="CompositionRequest"/> (una sola) como por
+/// <see cref="BatchCompositionRequest"/> (varias).
 /// </summary>
 public sealed class BaseImageInput
 {

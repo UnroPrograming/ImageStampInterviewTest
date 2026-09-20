@@ -7,19 +7,14 @@ public sealed class CompositionRequest
 {
     public CompositionRequest()
     {
-        BaseImage = Stream.Null;
+        BaseImage = new BaseImageInput { Content = Stream.Null };
         Layers = new List<Layer>();
     }
 
     /// <summary>
-    /// PNG payload of the background image.
+    /// Background image: its PNG payload and original upload file name.
     /// </summary>
-    public Stream BaseImage { get; set; }
-
-    /// <summary>
-    /// Original upload file name of the base image.
-    /// </summary>
-    public string? BaseImageFileName { get; set; }
+    public BaseImageInput BaseImage { get; set; }
 
     /// <summary>
     /// Layers to draw on top of the base image.

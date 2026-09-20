@@ -73,6 +73,9 @@ public sealed class Layer
 
     /// <summary>
     /// [IMAGE] PNG file stream. Required and only used when <see cref="Type"/> is <see cref="LayerTypes.Image"/>.
+    /// Se asigna directamente desde el mapper para un solo uso, o mediante <see cref="SetImageContent"/>
+    /// cuando el contenido de la capa también tiene que sobrevivir a un <see cref="Clone"/>
+    /// (por ejemplo, cuando se reutiliza en varias composiciones de un batch).
     /// </summary>
     public Stream? Image { get; set; }
 
@@ -105,4 +108,64 @@ public sealed class Layer
     /// Required when <see cref="Type"/> is <see cref="LayerTypes.Blur"/>.
     /// </summary>
     public float? Sigma { get; set; }
+
+    /// <summary>
+    /// Copia cacheada del payload PNG original de una capa de imagen, guardada para que
+    /// <see cref="Clone"/> pueda entregar un stream <see cref="Image"/> fresco cada vez. Un
+    /// <see cref="Stream"/> leído una vez queda agotado; los bytes subyacentes no, así que son
+    /// ellos los que realmente se reutilizan entre clones.
+    /// </summary>
+    private byte[]? _imageBytes;
+
+    /// <summary>
+    /// Asocia el contenido ya leído de una capa de imagen. Deja tanto <see cref="Image"/> (listo
+    /// para consumirse en la composición actual) como el caché interno que usa <see cref="Clone"/>.
+    /// </summary>
+    public void SetImageContent(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+
+        _imageBytes = bytes;
+        Image = new MemoryStream(bytes, writable: false);
+    }
+
+    /// <summary>
+    /// Crea una copia independiente de esta capa. Para una capa de tipo <see cref="LayerTypes.Image"/>
+    /// cuyo contenido se asignó mediante <see cref="SetImageContent"/>, la copia recibe un
+    /// <see cref="MemoryStream"/> nuevo construido a partir de los mismos bytes, de modo que puede
+    /// leerse de forma independiente en otra composición (esto es lo que permite reutilizar un mismo
+    /// Layer entre las distintas imágenes base de un batch). El resto de tipos de capa no tienen
+    /// estado de un solo uso, así que se copian tal cual.
+    /// </summary>
+    public Layer Clone()
+    {
+        Layer clone = new Layer
+        {
+            Type = Type,
+            X = X,
+            Y = Y,
+            ZIndex = ZIndex,
+            Opacity = Opacity,
+            FileName = FileName,
+            Width = Width,
+            Height = Height,
+            Color = Color,
+            Sigma = Sigma,
+        };
+
+        if (_imageBytes is not null)
+        {
+            clone.SetImageContent(_imageBytes);
+        }
+        else
+        {
+            // Capa de imagen cuyo contenido se asignó directamente en Image (sin pasar por
+            // SetImageContent) — por ejemplo, la ruta de composición única en Create(). No hay
+            // bytes cacheados que clonar, así que se copia la referencia al stream tal cual;
+            // seguro mientras el clon no se lea más de una vez.
+            clone.Image = Image;
+        }
+
+        return clone;
+    }
 }

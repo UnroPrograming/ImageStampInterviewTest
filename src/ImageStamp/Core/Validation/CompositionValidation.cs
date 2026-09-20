@@ -18,7 +18,7 @@ public static class CompositionValidation
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(options);
 
-        if (request.BaseImage == Stream.Null)
+        if (request.BaseImage.Content == Stream.Null)
         {
             error = "A base image is required.";
             return false;

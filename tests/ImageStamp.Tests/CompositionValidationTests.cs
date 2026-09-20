@@ -31,7 +31,7 @@ public sealed class CompositionValidationTests
         rectangle.Opacity = 0.5f;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(4, 4, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(4, 4, TestImages.Red) };
         request.Layers.Add(rectangle);
 
         bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
@@ -53,7 +53,7 @@ public sealed class CompositionValidationTests
         rectangle.Opacity = opacity;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(4, 4, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(4, 4, TestImages.Red) };
         request.Layers.Add(rectangle);
 
         bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
@@ -72,7 +72,7 @@ public sealed class CompositionValidationTests
         rectangle.Color = null;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(4, 4, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(4, 4, TestImages.Red) };
         request.Layers.Add(rectangle);
 
         bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
@@ -89,7 +89,7 @@ public sealed class CompositionValidationTests
         overlay.Image = null;
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(4, 4, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(4, 4, TestImages.Red) };
         request.Layers.Add(overlay);
 
         bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
@@ -105,7 +105,7 @@ public sealed class CompositionValidationTests
         unknown.Type = "pixelate";  // ← Cambiamos "blur" a algo que NO existe
 
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(4, 4, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(4, 4, TestImages.Red) };
         request.Layers.Add(unknown);
 
         bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
@@ -135,7 +135,7 @@ public sealed class CompositionValidationTests
 
         // Arrange: Crea una solicitud de composición con imagen base roja y el blur
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
         request.Layers.Add(blur);
 
         // Act: Ejecuta la composición
@@ -177,7 +177,7 @@ public sealed class CompositionValidationTests
 
         // Arrange: Crea la solicitud con imagen base roja, blur y la imagen azul
         CompositionRequest request = new CompositionRequest();
-        request.BaseImage = TestImages.SolidPngStream(10, 10, TestImages.Red);
+        request.BaseImage = new BaseImageInput { Content = TestImages.SolidPngStream(10, 10, TestImages.Red) };
         request.Layers.Add(blur);
         request.Layers.Add(image);
 
@@ -216,7 +216,7 @@ public sealed class CompositionValidationTests
 
         // Act: Composición SIN blur - obtiene el color original del píxel central
         CompositionRequest requestWithoutBlur = new CompositionRequest();
-        requestWithoutBlur.BaseImage = new MemoryStream(baseImageBytes, writable: false);
+        requestWithoutBlur.BaseImage = new BaseImageInput { Content = new MemoryStream(baseImageBytes, writable: false) };
 
         CompositionResult resultWithoutBlur = await TestServices.CompositionService()
             .ComposeAsync(requestWithoutBlur, CancellationToken.None);
@@ -235,7 +235,7 @@ public sealed class CompositionValidationTests
         blur.ZIndex = 1;
 
         CompositionRequest requestWithBlur = new CompositionRequest();
-        requestWithBlur.BaseImage = new MemoryStream(baseImageBytes, writable: false);
+        requestWithBlur.BaseImage = new BaseImageInput { Content = new MemoryStream(baseImageBytes, writable: false) };
         requestWithBlur.Layers.Add(blur);
 
         CompositionResult resultWithBlur = await TestServices.CompositionService()
