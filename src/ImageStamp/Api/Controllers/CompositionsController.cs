@@ -127,6 +127,12 @@ public sealed class CompositionsController(
                 layer.Height = layerRequest.Height;
                 layer.Color = layerRequest.Color;
             }
+            else if (layer.Type == LayerTypes.Blur)
+            {
+                layer.Width = layerRequest.Width;
+                layer.Height = layerRequest.Height;
+                layer.Sigma = layerRequest.Sigma;
+            }
             else
             {
                 return Problem(
@@ -188,6 +194,7 @@ public sealed class CompositionsController(
             stored.Width = layer.Width;
             stored.Height = layer.Height;
             stored.Color = layer.Color;
+            stored.Sigma = layer.Sigma;
 
             await repository.AddLayerAsync(stored, cancellationToken);
         }

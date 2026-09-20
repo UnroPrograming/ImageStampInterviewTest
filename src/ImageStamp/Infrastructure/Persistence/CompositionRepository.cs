@@ -71,8 +71,8 @@ VALUES (@id, @created_at, @status, @base_image_file_name, @layer_count);";
         ArgumentNullException.ThrowIfNull(layer);
 
         const string sql = @"
-INSERT INTO composition_layers (id, composition_id, layer_type, x, y, opacity, z_index, file_name, width, height, color)
-VALUES (@id, @composition_id, @layer_type, @x, @y, @opacity, @z_index, @file_name, @width, @height, @color);";
+INSERT INTO composition_layers (id, composition_id, layer_type, x, y, opacity, z_index, file_name, width, height, color, sigma)
+VALUES (@id, @composition_id, @layer_type, @x, @y, @opacity, @z_index, @file_name, @width, @height, @color, @sigma);";
 
         await using NpgsqlConnection connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync().ConfigureAwait(false);
@@ -89,6 +89,7 @@ VALUES (@id, @composition_id, @layer_type, @x, @y, @opacity, @z_index, @file_nam
         command.Parameters.AddWithValue("width", (object?)layer.Width ?? DBNull.Value);
         command.Parameters.AddWithValue("height", (object?)layer.Height ?? DBNull.Value);
         command.Parameters.AddWithValue("color", (object?)layer.Color ?? DBNull.Value);
+        command.Parameters.AddWithValue("sigma", (object?)layer.Sigma ?? DBNull.Value);
 
         await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
@@ -272,6 +273,9 @@ ORDER BY z_index;";
 
         int color = reader.GetOrdinal("color");
         layer.Color = reader.IsDBNull(color) ? null : reader.GetString(color);
+
+        int sigma = reader.GetOrdinal("sigma");
+        layer.Sigma = reader.IsDBNull(sigma) ? null : (float?)reader.GetFloat(sigma);
 
         return layer;
     }

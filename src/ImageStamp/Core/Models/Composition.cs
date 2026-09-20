@@ -65,4 +65,6 @@ public sealed class CompositionLayer
     public int? Height { get; set; }
 
     public string? Color { get; set; }
+
+    public float? Sigma { get; set; }
 }

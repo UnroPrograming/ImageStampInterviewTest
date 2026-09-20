@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS composition_layers
     file_name      text    NULL,
     width          integer NULL,
     height         integer NULL,
-    color          text    NULL
+    color          text    NULL,
+    sigma          real    NULL
 );
 
 CREATE INDEX IF NOT EXISTS ix_compositions_created_at

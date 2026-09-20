@@ -7,6 +7,8 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
+//Swagger
+builder.Services.AddSwaggerGen();
 
 builder.Services.Configure<ImageProcessingOptions>(
     builder.Configuration.GetSection(ImageProcessingOptions.SectionName));
@@ -24,6 +26,8 @@ app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
+    app.UseSwagger();
+    app.UseSwaggerUI();
     app.MapOpenApi();
 }
 
