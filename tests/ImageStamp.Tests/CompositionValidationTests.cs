@@ -114,6 +114,8 @@ public sealed class CompositionValidationTests
         Assert.Contains("unsupported", error, StringComparison.OrdinalIgnoreCase);
     }
 
+    #region Blur
+
     /// <summary>
     /// Verifica que una capa de blur se aplica sin errores y produce una imagen del tamaño correcto.
     /// Este test valida el caso más simple: blur sobre un color sólido uniforme.
@@ -246,4 +248,94 @@ public sealed class CompositionValidationTests
         // El blur mezcla los píxeles vecinos, alterando el color en la región de transición
         Assert.NotEqual(pixelWithoutBlur, pixelWithBlur);
     }
+
+    #endregion
+
+    #region Batch
+
+    /// <summary>
+    /// Verifica que un BatchCompositionRequest sin ninguna imagen base es rechazado,
+    /// igual que CompositionRequest exige una única imagen base obligatoria.
+    /// </summary>
+    [Fact]
+    public void TryValidate_BatchWithoutBaseImages_Fails()
+    {
+        // Arrange: request vacío, sin imágenes base
+        BatchCompositionRequest request = new BatchCompositionRequest();
+
+        // Act
+        bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
+
+        // Assert: debe fallar con un mensaje que mencione la imagen base
+        Assert.False(valid);
+        Assert.Contains("base image", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifica el caso feliz: varias imágenes base válidas más una capa válida
+    /// deben pasar la validación sin errores.
+    /// </summary>
+    [Fact]
+    public void TryValidate_BatchWithValidBaseImagesAndLayers_Succeeds()
+    {
+        // Arrange: una capa solid válida (dimensiones y color correctos)
+        Layer rectangle = new Layer();
+        rectangle.Type = LayerTypes.Solid;
+        rectangle.Width = 10;
+        rectangle.Height = 10;
+        rectangle.Color = "#FF0000";
+        rectangle.Opacity = 0.5f;
+
+        // Arrange: dos imágenes base distintas, cada una con su propio stream y nombre
+        BatchCompositionRequest request = new BatchCompositionRequest();
+        request.BaseImages.Add(new BaseImageInput
+        {
+            Content = TestImages.SolidPngStream(4, 4, TestImages.Red),
+            FileName = "base1.png",
+        });
+        request.BaseImages.Add(new BaseImageInput
+        {
+            Content = TestImages.SolidPngStream(4, 4, TestImages.Blue),
+            FileName = "base2.png",
+        });
+        request.Layers.Add(rectangle);
+
+        // Act
+        bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
+
+        // Assert: debe validar correctamente, sin mensaje de error
+        Assert.True(valid, error);
+    }
+
+    /// <summary>
+    /// Verifica que la validación de capas se reutiliza igual que en el endpoint single:
+    /// un tipo de capa desconocido debe rechazar el batch completo con el mismo mensaje
+    /// de "unsupported", sin importar cuántas imágenes base se hayan enviado.
+    /// </summary>
+    [Fact]
+    public void TryValidate_BatchWithAnInvalidLayer_FailsWithTheSameLayerError()
+    {
+        // Arrange: una capa con un tipo que no existe
+        Layer unknown = new Layer();
+        unknown.Type = "pixelate";
+
+        // Arrange: una imagen base válida, pero la capa inválida debe bastar para fallar
+        BatchCompositionRequest request = new BatchCompositionRequest();
+        request.BaseImages.Add(new BaseImageInput
+        {
+            Content = TestImages.SolidPngStream(4, 4, TestImages.Red),
+            FileName = "base1.png",
+        });
+        request.Layers.Add(unknown);
+
+        // Act
+        bool valid = CompositionValidation.TryValidate(request, new ImageProcessingOptions(), out string error);
+
+        // Assert: debe fallar con el mismo mensaje "unsupported" que usa la validación
+        // de capas para CompositionRequest, confirmando que se reutiliza la misma lógica
+        Assert.False(valid);
+        Assert.Contains("unsupported", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    #endregion
 }

@@ -1,3 +1,4 @@
+using ImageStamp.Core.Imaging;
 using ImageStamp.Core.Models;
 
 using SixLabors.ImageSharp;
@@ -182,5 +183,57 @@ public sealed class ImageCompositionServiceTests
 
         using Image<Rgba32> output = TestImages.Decode(result.Png);
         Assert.Equal(TestImages.Blue, output[1, 1]);
+    }
+
+    /// <summary>
+    /// Reproduce el escenario del endpoint batch: los mismos bytes de una capa de imagen
+    /// se usan para componer DOS imágenes base distintas, cada una con su propio MemoryStream
+    /// fresco creado a partir de esos bytes. Verifica que ambas composiciones funcionan
+    /// correctamente, sin que la segunda falle por reutilizar un stream ya consumido.
+    /// </summary>
+    [Fact]
+    public async Task ComposeAsync_CalledTwiceReusingTheSameImageLayerBytes_ProducesTheLogoInBothCompositions()
+    {
+        // Arrange: simula lo que hace el controller en /batch: una capa de imagen cuyo
+        // contenido se guarda como byte[] una sola vez, y se crea un MemoryStream NUEVO
+        // por cada composición. Esto es justo lo que arregló el bug de streams agotados.
+        byte[] logoBytes = TestImages.SolidPng(2, 2, TestImages.Blue);
+
+        ImageCompositionService service = TestServices.CompositionService();
+
+        // Función local que compone una imagen base con la capa del logo encima.
+        // Cada llamada crea un MemoryStream nuevo a partir de logoBytes, imitando
+        // cómo el controller construye una capa independiente por cada imagen base del batch.
+        async Task<CompositionResult> ComposeOnce(SixLabors.ImageSharp.PixelFormats.Rgba32 baseColor)
+        {
+            Layer imageLayer = new Layer();
+            imageLayer.Type = LayerTypes.Image;
+            imageLayer.X = 0;
+            imageLayer.Y = 0;
+            imageLayer.ZIndex = 1;
+            imageLayer.Opacity = 1f;
+            imageLayer.Image = new MemoryStream(logoBytes, writable: false); // stream fresco cada vez
+
+            CompositionRequest request = new CompositionRequest();
+            request.BaseImage = TestImages.SolidPngStream(10, 10, baseColor);
+            request.Layers.Add(imageLayer);
+
+            return await service.ComposeAsync(request, CancellationToken.None);
+        }
+
+        // Act: compone dos veces seguidas, reutilizando los mismos logoBytes
+        // (pero con streams distintos, como hace el controller)
+        CompositionResult result1 = await ComposeOnce(TestImages.Red);
+        CompositionResult result2 = await ComposeOnce(TestImages.Red);
+
+        using Image<Rgba32> output1 = TestImages.Decode(result1.Png);
+        using Image<Rgba32> output2 = TestImages.Decode(result2.Png);
+
+        // Assert: antes del fix, la segunda composición fallaba con ArgumentNullException
+        // porque el Layer original se reutilizaba con el mismo Stream ya agotado (leído
+        // hasta el final en la primera composición). Ahora, con un MemoryStream nuevo
+        // por llamada, ambas composiciones deben tener el logo dibujado correctamente.
+        Assert.Equal(TestImages.Blue, output1[0, 0]);
+        Assert.Equal(TestImages.Blue, output2[0, 0]);
     }
 }

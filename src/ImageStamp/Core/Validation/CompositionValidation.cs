@@ -10,6 +10,9 @@ namespace ImageStamp.Core.Validation;
 /// </summary>
 public static class CompositionValidation
 {
+    /// <summary>
+    /// Valida un request de composición simple.
+    /// </summary>
     public static bool TryValidate(CompositionRequest request, ImageProcessingOptions options, out string error)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -21,15 +24,52 @@ public static class CompositionValidation
             return false;
         }
 
-        if (request.Layers.Count > options.MaxLayers)
+        return TryValidateLayers(request.Layers, options, out error);
+    }
+
+    /// <summary>
+    /// Valida un request de composición por lotes.
+    /// </summary>
+    public static bool TryValidate(BatchCompositionRequest request, ImageProcessingOptions options, out string error)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (request.BaseImages.Count == 0)
+        {
+            error = "At least one base image is required.";
+            return false;
+        }
+
+        foreach (BaseImageInput baseImage in request.BaseImages)
+        {
+            if (baseImage.Content == Stream.Null)
+            {
+                error = "A base image is required.";
+                return false;
+            }
+        }
+
+        return TryValidateLayers(request.Layers, options, out error);
+    }
+
+    /// <summary>
+    /// Valida solo la lista de capas (usado internamente por ambas sobrecargas).
+    /// </summary>
+    private static bool TryValidateLayers(List<Layer> layers, ImageProcessingOptions options, out string error)
+    {
+        ArgumentNullException.ThrowIfNull(layers);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (layers.Count > options.MaxLayers)
         {
             error = "A composition cannot have more than " + options.MaxLayers + " layers.";
             return false;
         }
 
-        for (int i = 0; i < request.Layers.Count; i++)
+        for (int i = 0; i < layers.Count; i++)
         {
-            Layer layer = request.Layers[i];
+            Layer layer = layers[i];
 
             if (!TryValidateLayer(layer, i, out error))
             {
