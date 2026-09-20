@@ -148,7 +148,7 @@ public sealed class ImageCompositionService
             blurLayer.Width!.Value,
             blurLayer.Height!.Value);
 
-        // Ajusta la región a los límites del lienzo para evitar errores de índice fuera de rango
+        // Ajusta la región a los límites del lienzo
         Rectangle clampedRegion = Rectangle.Intersect(blurRegion, canvas.Bounds);
 
         // Si la región ajustada está fuera del lienzo, no hace nada
@@ -157,11 +157,10 @@ public sealed class ImageCompositionService
             return;
         }
 
-        // Aplica desenfoque Gaussiano a la región especificada
+        // Aplica desenfoque Gaussiano solo a la región especificada, sin recortar
         canvas.Mutate(context =>
         {
-            context.Crop(clampedRegion)
-                   .GaussianBlur(blurLayer.Sigma!.Value);
+            context.GaussianBlur(blurLayer.Sigma!.Value, clampedRegion);
         });
     }
 
