@@ -1,5 +1,8 @@
 # NOTES
 
+> Rama posterior a la entrega. Incluye un cambio hecho después de enviar el test, marcado abajo
+> como *(posterior a la entrega)*. La versión entregada está en el commit anterior, sin él.
+
 ## Qué he añadido
 
 **Capa `blur`.** Nuevo `LayerTypes.Blur` con `Sigma` en `Layer`, `CompositionLayer` y
@@ -17,6 +20,21 @@ una sobrecarga de `TryValidate` para `BatchCompositionRequest` que reutiliza el 
 mapeo por tipo) y `UploadValidation`. Unifiqué `Stream` + `BaseImageFileName` en `BaseImageInput`,
 que usan tanto `CompositionRequest` como `BatchCompositionRequest`, para que el dominio no dependa
 de `IFormFile`.
+
+**Estado compartido en `ImageCompositionService`** *(posterior a la entrega)*. El servicio se
+registra como singleton pero guardaba `_copyBuffer`, `_renderQueue` y `_lastOutputSizeBytes` como
+campos de instancia: dos peticiones concurrentes escriben en el mismo buffer de 80 KB y limpian la
+misma cola de capas. Lo dejé documentado por alcance y al volver sobre ello vi que el arreglo era
+más pequeño de lo estimado, porque parte se resolvía quitando duplicación: `BufferAsync` (privado
+del servicio) y `StreamHelpers.ReadFullyAsync` (el que usa el controller) hacían lo mismo, así que
+eliminé `BufferAsync` y con él desapareció `_copyBuffer` entero — `ReadFullyAsync` delega en
+`CopyToAsync` y además tiene atajo para `MemoryStream`, que es lo que siempre le llega desde el
+controller. `_renderQueue` pasó a ser local en `ComposeAsync`: nótese que el `Clear()` inicial ya
+no hace falta, y ese `Clear()` era precisamente el síntoma de que el objeto sobrevivía entre
+peticiones. `_lastOutputSizeBytes` lo borré porque no lo usa nadie, `CompositionResult` ya expone
+ese dato por petición. `CopyBufferSize` se quedaba sin lector, así que lo quité de
+`ImageProcessingOptions` y de `appsettings.json`; si algún día hay que calibrarlo, `CopyToAsync`
+tiene overload con `bufferSize`.
 
 ## Con qué me he encontrado
 
@@ -38,10 +56,11 @@ tabla y a `ReadLayer` no bastaba: fallaba con `Field not found in row: sigma`.
 
 ## Qué he visto y no he tocado
 
-**`ImageCompositionService` es singleton con estado mutable por petición.** `_copyBuffer` y
-`_renderQueue` son campos de instancia: dos peticiones concurrentes se corrompen mutuamente. El
-arreglo es volverlos locales (y `ArrayPool<byte>` si la asignación pesa de verdad), pero pide un
-test de concurrencia que lo respalde y queda fuera de lo pedido.
+**No hay test de concurrencia para el cambio del singleton.** Lanzar N composiciones en paralelo y
+comprobar que cada una recupera su resultado sería lo suyo, pero no es determinista: con los campos
+de instancia falla casi siempre, no siempre. Lo que sí queda verificable por inspección es que el
+servicio ya no tiene estado mutable compartido — los métodos que usaban el buffer quedaron
+`static`.
 
 **`Batch` no llama a `MarkFailedAsync`.** `Create` sí, así que un batch fallido deja filas en
 `pending`. Se arregla junto con el siguiente paso natural del refactor: un servicio de aplicación

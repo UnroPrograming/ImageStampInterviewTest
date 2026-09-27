@@ -18,11 +18,6 @@ public sealed class ImageProcessingOptions
     public int MaxLayers { get; set; } = 32;
 
     /// <summary>
-    /// Size of the buffer used while reading uploaded payloads.
-    /// </summary>
-    public int CopyBufferSize { get; set; } = 81920;
-
-    /// <summary>
     /// Deflate level used when encoding the resulting PNG, between 1 and 9.
     /// </summary>
     public int PngCompressionLevel { get; set; } = 6;

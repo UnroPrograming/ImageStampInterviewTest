@@ -17,10 +17,6 @@ public sealed class ImageCompositionService
     private readonly ImageProcessingOptions _options;
     private readonly ILogger<ImageCompositionService> _logger;
     private readonly PngEncoder _encoder;
-    private readonly byte[] _copyBuffer;
-    private readonly List<RenderableLayer> _renderQueue;
-
-    private long _lastOutputSizeBytes;
 
     public ImageCompositionService(IOptions<ImageProcessingOptions> options, ILogger<ImageCompositionService> logger)
     {
@@ -30,26 +26,17 @@ public sealed class ImageCompositionService
         _options = options.Value;
         _logger = logger;
 
+        // El encoder es inmutable una vez construido, así que se puede compartir entre
+        // peticiones sin riesgo. La cola de renderizado, en cambio, es estado de trabajo
+        // de cada composición y vive como local en ComposeAsync: este servicio se registra
+        // como singleton, y como campo de instancia dos peticiones concurrentes se
+        // corromperían mutuamente la lista de capas.
         _encoder = new PngEncoder
         {
             ColorType = PngColorType.RgbWithAlpha,
             BitDepth = PngBitDepth.Bit8,
             CompressionLevel = (PngCompressionLevel)Math.Clamp(_options.PngCompressionLevel, 0, 9),
         };
-
-        // The encoder, the copy buffer and the render queue are built once and reused for every
-        // composition: allocating an 80 KB array and a fresh list for each layer of each request ends
-        // up on the large object heap and shows as gen2 pressure as soon as traffic grows.
-        _copyBuffer = new byte[Math.Max(4096, _options.CopyBufferSize)];
-        _renderQueue = new List<RenderableLayer>(_options.MaxLayers);
-    }
-
-    /// <summary>
-    /// Size in bytes of the last PNG produced by this service. Used for lightweight diagnostics.
-    /// </summary>
-    public long LastOutputSizeBytes
-    {
-        get { return _lastOutputSizeBytes; }
     }
 
     /// <summary>
@@ -61,24 +48,25 @@ public sealed class ImageCompositionService
 
         Stopwatch stopwatch = Stopwatch.StartNew();
 
-        // Carga la imagen base en memoria
-        byte[] baseImageBytes = await BufferAsync(request.BaseImage.Content, cancellationToken).ConfigureAwait(false);
+        // Local, no campo: cada composición necesita su propia cola de renderizado.
+        List<RenderableLayer> renderQueue = new List<RenderableLayer>(_options.MaxLayers);
 
-        _renderQueue.Clear();
+        // Carga la imagen base en memoria
+        byte[] baseImageBytes = await StreamHelpers.ReadFullyAsync(request.BaseImage.Content, cancellationToken).ConfigureAwait(false);
 
         try
         {
             // Prepara todas las capas para renderizado
             foreach (Layer layer in request.Layers)
             {
-                _renderQueue.Add(await CreateRenderableAsync(layer, cancellationToken).ConfigureAwait(false));
+                renderQueue.Add(await CreateRenderableAsync(layer, cancellationToken).ConfigureAwait(false));
             }
 
             // Carga la imagen base como lienzo
             using Image<Rgba32> canvas = Image.Load<Rgba32>(baseImageBytes);
 
             // Dibuja todas las capas en el lienzo
-            await Task.Run(() => Compose(canvas, _renderQueue)).ConfigureAwait(false);
+            await Task.Run(() => Compose(canvas, renderQueue)).ConfigureAwait(false);
 
             // Codifica el resultado como PNG
             using MemoryStream output = new MemoryStream();
@@ -87,13 +75,12 @@ public sealed class ImageCompositionService
             byte[] png = output.ToArray();
 
             stopwatch.Stop();
-            _lastOutputSizeBytes = png.LongLength;
 
             _logger.LogInformation(
                 "Composed a {Width}x{Height} image from {LayerCount} layers in {ElapsedMilliseconds} ms ({OutputBytes} bytes).",
                 canvas.Width,
                 canvas.Height,
-                _renderQueue.Count,
+                renderQueue.Count,
                 stopwatch.ElapsedMilliseconds,
                 png.LongLength);
 
@@ -102,7 +89,7 @@ public sealed class ImageCompositionService
         finally
         {
             // Libera los recursos de todas las capas
-            foreach (RenderableLayer renderable in _renderQueue)
+            foreach (RenderableLayer renderable in renderQueue)
             {
                 renderable.Dispose();
             }
@@ -175,7 +162,7 @@ public sealed class ImageCompositionService
     /// <summary>
     /// Convierte una capa en un contenido renderizable (imagen).
     /// </summary>
-    private async Task<RenderableLayer> CreateRenderableAsync(Layer layer, CancellationToken cancellationToken)
+    private static async Task<RenderableLayer> CreateRenderableAsync(Layer layer, CancellationToken cancellationToken)
     {
         if (layer.Type == LayerTypes.Image)
         {
@@ -185,7 +172,7 @@ public sealed class ImageCompositionService
                 throw new InvalidOperationException("An image layer was submitted without a PNG payload.");
             }
 
-            byte[] content = await BufferAsync(layer.Image, cancellationToken).ConfigureAwait(false);
+            byte[] content = await StreamHelpers.ReadFullyAsync(layer.Image, cancellationToken).ConfigureAwait(false);
             return new RenderableLayer(layer, Image.Load<Rgba32>(content));
         }
         else if (layer.Type == LayerTypes.Solid)
@@ -207,22 +194,6 @@ public sealed class ImageCompositionService
         {
             throw new NotSupportedException("Layer type '" + layer.Type + "' is not supported.");
         }
-    }
-
-    /// <summary>
-    /// Lee un stream completamente en memoria.
-    /// </summary>
-    private async Task<byte[]> BufferAsync(Stream source, CancellationToken cancellationToken)
-    {
-        using MemoryStream target = new MemoryStream();
-
-        int read;
-        while ((read = await source.ReadAsync(_copyBuffer, 0, _copyBuffer.Length, cancellationToken).ConfigureAwait(false)) > 0)
-        {
-            target.Write(_copyBuffer, 0, read);
-        }
-
-        return target.ToArray();
     }
 
     /// <summary>
