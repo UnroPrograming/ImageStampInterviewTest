@@ -83,43 +83,17 @@ public sealed class CompositionsController(
             return Problem(validationError, statusCode: StatusCodes.Status400BadRequest);
         }
 
-        Composition composition = new Composition();
-        composition.Id = Guid.NewGuid();
-        composition.CreatedAt = DateTimeOffset.UtcNow;
-        composition.Status = CompositionStatus.Pending;
-        composition.BaseImageFileName = compositionRequest.BaseImage.FileName;
-        composition.LayerCount = compositionRequest.Layers.Count;
+        (Composition composition, CompositionResult? result, string? compositionError) =
+            await ExecuteCompositionAsync(compositionRequest, cancellationToken);
 
-        await repository.CreateCompositionAsync(composition, cancellationToken);
-
-        CompositionResult result;
-
-        try
+        if (compositionError is not null)
         {
-            result = await compositionService.ComposeAsync(compositionRequest, cancellationToken);
+            return Problem(compositionError, statusCode: StatusCodes.Status400BadRequest);
         }
-        catch (UnknownImageFormatException exception)
-        {
-            await repository.MarkFailedAsync(composition.Id, exception.Message, cancellationToken);
-            return Problem("One of the uploaded files is not a supported image.", statusCode: StatusCodes.Status400BadRequest);
-        }
-        catch (ImageFormatException exception)
-        {
-            await repository.MarkFailedAsync(composition.Id, exception.Message, cancellationToken);
-            return Problem("One of the uploaded images could not be decoded.", statusCode: StatusCodes.Status400BadRequest);
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Composition {CompositionId} failed.", composition.Id);
-            await repository.MarkFailedAsync(composition.Id, exception.Message, cancellationToken);
-            throw;
-        }
-
-        await SaveCompositionAsync(composition, result, compositionRequest.Layers, cancellationToken);
 
         Response.Headers["X-Composition-Id"] = composition.Id.ToString();
 
-        return File(result.Png, "image/png");
+        return File(result!.Png, "image/png");
     }
 
     /// <summary>
@@ -196,68 +170,40 @@ public sealed class CompositionsController(
             return Problem(validationError, statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Procesa cada imagen base
+        // Procesa cada imagen base con el mismo flujo que usa el endpoint de imagen única
         List<(string fileName, byte[] png)> results = new List<(string, byte[])>();
 
-        try
+        foreach (BaseImageInput baseImageInput in baseImageInputs)
         {
-            foreach (BaseImageInput baseImageInput in baseImageInputs)
+            CompositionRequest compositionRequest = new CompositionRequest();
+            compositionRequest.BaseImage = baseImageInput;
+
+            // Clona las capas para ESTA composición. Layer.Clone() se encarga de dar un
+            // MemoryStream fresco a las capas de tipo imagen (los streams no son
+            // reutilizables entre lecturas); blur y solid no tienen stream que clonar.
+            List<Layer> layersForThisComposition = new List<Layer>();
+            foreach (Layer layer in layers)
             {
-                CompositionRequest compositionRequest = new CompositionRequest();
-                compositionRequest.BaseImage = baseImageInput;
-
-                // Clona las capas para ESTA composición. Layer.Clone() se encarga de dar un
-                // MemoryStream fresco a las capas de tipo imagen (los streams no son
-                // reutilizables entre lecturas); blur y solid no tienen stream que clonar.
-                List<Layer> layersForThisComposition = new List<Layer>();
-                foreach (Layer layer in layers)
-                {
-                    layersForThisComposition.Add(layer.Clone());
-                }
-
-                compositionRequest.Layers = layersForThisComposition;
-
-                CompositionResult result;
-                try
-                {
-                    result = await compositionService.ComposeAsync(compositionRequest, cancellationToken);
-                }
-                catch (UnknownImageFormatException exception)
-                {
-                    return Problem($"Base image '{baseImageInput.FileName}' is not a supported format: {exception.Message}", statusCode: StatusCodes.Status400BadRequest);
-                }
-                catch (ImageFormatException exception)
-                {
-                    return Problem($"Base image '{baseImageInput.FileName}' could not be decoded: {exception.Message}", statusCode: StatusCodes.Status400BadRequest);
-                }
-                catch (Exception exception)
-                {
-                    logger.LogError(exception, "Batch composition failed for base image '{BaseImageFileName}'.", baseImageInput.FileName);
-                    throw;
-                }
-
-                Composition composition = new Composition();
-                composition.Id = Guid.NewGuid();
-                composition.CreatedAt = DateTimeOffset.UtcNow;
-                composition.Status = CompositionStatus.Pending;
-                composition.BaseImageFileName = baseImageInput.FileName;
-                composition.LayerCount = layersForThisComposition.Count;
-
-                await repository.CreateCompositionAsync(composition, cancellationToken);
-                await SaveCompositionAsync(composition, result, layersForThisComposition, cancellationToken);
-
-                string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(baseImageInput.FileName) ?? $"composition_{results.Count + 1}";
-                results.Add((fileNameWithoutExtension, result.Png));
+                layersForThisComposition.Add(layer.Clone());
             }
 
-            byte[] zipBytes = ZipHelper.CreateZipFromImages(results);
-            return File(zipBytes, "application/zip", "compositions.zip");
+            compositionRequest.Layers = layersForThisComposition;
+
+            (Composition composition, CompositionResult? result, string? compositionError) =
+                await ExecuteCompositionAsync(compositionRequest, cancellationToken);
+
+            if (compositionError is not null)
+            {
+                return Problem(compositionError, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(baseImageInput.FileName) ?? $"composition_{results.Count + 1}";
+            results.Add((fileNameWithoutExtension, result!.Png));
         }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "Batch composition pipeline failed.");
-            throw;
-        }
+
+        byte[] zipBytes = ZipHelper.CreateZipFromImages(results);
+
+        return File(zipBytes, "application/zip", "compositions.zip");
     }
 
     /// <summary>
@@ -299,6 +245,62 @@ public sealed class CompositionsController(
         composition.Layers = await repository.GetLayersAsync(composition.Id, cancellationToken);
 
         return Ok(CompositionResponse.From(composition));
+    }
+
+    /// <summary>
+    /// Ejecuta el ciclo de vida completo de una composición: crea su fila como <c>pending</c>,
+    /// compone, y la deja en <c>completed</c> o <c>failed</c> según el resultado.
+    /// </summary>
+    /// <remarks>
+    /// Lo comparten los dos endpoints, de modo que una imagen del lote produce exactamente la
+    /// misma fila que si se hubiera llamado al endpoint de imagen única. La fila se inserta
+    /// antes de componer, para que un fallo quede registrado en vez de no dejar rastro.
+    /// </remarks>
+    /// <returns>
+    /// La composición creada; su resultado si salió bien, y el mensaje de error si la imagen
+    /// no se pudo decodificar. Quien llama decide cómo devolver ese error por HTTP.
+    /// </returns>
+    private async Task<(Composition composition, CompositionResult? result, string? error)> ExecuteCompositionAsync(
+        CompositionRequest request,
+        CancellationToken cancellationToken)
+    {
+        Composition composition = new Composition();
+        composition.Id = Guid.NewGuid();
+        composition.CreatedAt = DateTimeOffset.UtcNow;
+        composition.Status = CompositionStatus.Pending;
+        composition.BaseImageFileName = request.BaseImage.FileName;
+        composition.LayerCount = request.Layers.Count;
+
+        await repository.CreateCompositionAsync(composition, cancellationToken);
+
+        CompositionResult result;
+
+        try
+        {
+            result = await compositionService.ComposeAsync(request, cancellationToken);
+        }
+        catch (UnknownImageFormatException exception)
+        {
+            // El fallo puede venir de la imagen base o del PNG de una capa, así que el nombre
+            // del fichero base es contexto para localizar la composición, no la causa.
+            await repository.MarkFailedAsync(composition.Id, exception.Message, cancellationToken);
+            return (composition, null, $"Composition for '{request.BaseImage.FileName}': one of the uploaded files is not a supported image.");
+        }
+        catch (ImageFormatException exception)
+        {
+            await repository.MarkFailedAsync(composition.Id, exception.Message, cancellationToken);
+            return (composition, null, $"Composition for '{request.BaseImage.FileName}': one of the uploaded images could not be decoded.");
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Composition {CompositionId} failed.", composition.Id);
+            await repository.MarkFailedAsync(composition.Id, exception.Message, cancellationToken);
+            throw;
+        }
+
+        await SaveCompositionAsync(composition, result, request.Layers, cancellationToken);
+
+        return (composition, result, null);
     }
 
     private async Task SaveCompositionAsync(Composition composition, CompositionResult result, List<Layer> layers, CancellationToken cancellationToken)

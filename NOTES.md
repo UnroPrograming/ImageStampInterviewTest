@@ -36,6 +36,13 @@ ese dato por petición. `CopyBufferSize` se quedaba sin lector, así que lo quit
 `ImageProcessingOptions` y de `appsettings.json`; si algún día hay que calibrarlo, `CopyToAsync`
 tiene overload con `bufferSize`.
 
+**Ciclo de vida de la composición, en un solo sitio** *(posterior a la entrega)*. `Create` y
+`Batch` repetían el mismo flujo (crear fila → componer → persistir capas → marcar estado) con el
+orden cambiado: `Create` insertaba la fila antes de componer y la marcaba `failed` si fallaba,
+`Batch` la insertaba después, así que una imagen que fallaba no dejaba rastro en la BD. Lo extraje
+a `ExecuteCompositionAsync`, que devuelve la composición, su resultado y el mensaje de error, y
+deja a cada endpoint decidir qué responder (un PNG o una entrada del ZIP).
+
 ## Con qué me he encontrado
 
 **`GaussianBlur` por región.** Mi primera versión usaba `Crop(region).GaussianBlur(sigma)`, que
@@ -62,10 +69,12 @@ de instancia falla casi siempre, no siempre. Lo que sí queda verificable por in
 servicio ya no tiene estado mutable compartido — los métodos que usaban el buffer quedaron
 `static`.
 
-**`Batch` no llama a `MarkFailedAsync`.** `Create` sí, así que un batch fallido deja filas en
-`pending`. Se arregla junto con el siguiente paso natural del refactor: un servicio de aplicación
-que posea el flujo completo (crear fila → componer → persistir → marcar estado), hoy repetido en
-los dos endpoints.
+**Un lote que falla queda a medias.** Si la imagen 15 de 40 no se puede decodificar, `Batch`
+devuelve 400, pero las 14 anteriores ya están confirmadas como `completed` y el cliente no recibe
+ningún PNG. La alternativa es best-effort — marcar esa como `failed`, seguir, y devolver el ZIP
+con las que salieron bien más un manifiesto de las que no — y para el caso de uso (40 fotos de un
+concesionario, una sale corrupta de la cámara) probablemente sea lo correcto. No lo he cambiado
+porque no es una decisión técnica.
 
 **Sin tests a nivel HTTP** (`Mvc.Testing` no está referenciado): multipart, status codes y nombres
 de las entradas del ZIP solo están verificados a mano con Postman. **Y la persistencia no es
